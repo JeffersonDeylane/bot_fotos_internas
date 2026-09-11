@@ -1,0 +1,24 @@
+{
+  "photos": {
+    "directories": ["./photos"]
+  },
+  "storage": {
+    "databaseDirectory": "./data/database",
+    "indexDirectory": "./data/index",
+    "cacheDirectory": "./data/cache",
+    "whatsAppSessionDirectory": "./data/auth"
+  },
+  "processing": {
+    "maxWorkers": 1,
+    "batchSize": 1
+  },
+  "inference": {
+    "enabled": false,
+    "modelDirectory": "./models/siglip2-base-int8",
+    "intraOpThreads": 2,
+    "batchSize": 1
+  },
+  "whatsapp": {
+    "allowedNumbers": []
+  }
+}
