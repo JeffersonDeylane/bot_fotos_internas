@@ -1,6 +1,6 @@
 # Fotos semânticas
 
-Catálogo incremental local de fotos em Node.js 24 e TypeScript, com SQLite, Sharp e embeddings multimodais SigLIP 2 via ONNX Runtime. Descobre arquivos, extrai dimensões/vetores e retoma trabalho pendente em um Worker Thread. Ainda não conecta ao WhatsApp nem implementa o índice HNSW. Indexação, tokenização e inferência são offline; somente comandos explícitos de preparação baixam pesos ou exemplos públicos.
+Catálogo incremental local de fotos em Node.js 24 e TypeScript, com SQLite, Sharp, embeddings multimodais SigLIP 2, índice HNSW USearch e integração WhatsApp via Baileys. Descobre arquivos, extrai dimensões/vetores e retoma trabalho pendente em Worker Thread. Indexação, tokenização e inferência são offline; somente comandos explícitos de preparação baixam pesos ou exemplos públicos.
 
 ## Preparação no PowerShell
 
@@ -19,7 +19,9 @@ Todos os diretórios precisam existir. Pastas de fotos precisam permitir leitura
 
 `PHOTO_CONFIG` seleciona outro arquivo; `LOG_LEVEL` aceita `debug`, `info`, `warn` ou `error`. Variáveis de ambiente existentes têm precedência sobre `.env`. `maxWorkers` aceita 1–16 e `batchSize` 1–32; mantenha ambos em 1 neste computador. Nesta etapa existe um worker proprietário do catálogo; leituras simultâneas são limitadas ao menor valor entre `maxWorkers`, `batchSize` e 4. A concorrência interna do Sharp é 1 e seu cache é limitado a 16 MB.
 
-`whatsapp.allowedNumbers` aceita números internacionais, por exemplo `+5511999999999`. Lista vazia significa nenhum número autorizado; o transporte WhatsApp ainda está desativado.
+`whatsapp.allowedNumbers` aceita números internacionais, por exemplo `+5511999999999`. Lista vazia desativa o transporte. Com ao menos um número, `npm start` exibe um QR no terminal na primeira execução; vincule-o pelo menu **Aparelhos conectados** do WhatsApp. Credenciais ficam somente em `storage.whatsAppSessionDirectory`. Baileys usa o protocolo do WhatsApp Web e não é uma API oficial da Meta; use uma conta dedicada e respeite os termos aplicáveis.
+
+Comandos: `/fotos <descrição>`, `/data [quantidade] DD/MM/AAAA`, `/data MM/AAAA`, `/data AAAA`, `/data DD/MM/AAAA a DD/MM/AAAA`, `/mais`, `/mostrar-pastas`, `/abrir-<pasta>`, `/abrir <número>`, `/pastas`, `/mostrar`, `/mostrar-<pasta>`, `/mais-pastas`, `/voltar`, `/onde`, `/status` e `/ajuda`. Usuários fora da lista são ignorados. Caminhos absolutos, traversal, junctions externas e arquivos fora das raízes autorizadas são recusados.
 
 ## Comandos
 
@@ -29,9 +31,20 @@ npm test
 npm start
 ```
 
-`npm start` executa o build já gerado e permanece ativo até Ctrl+C. `npm run dev` executa os arquivos TypeScript com reinício automático ao editar módulos importados; execute o build para validar tipos. `npm run typecheck` confere tipos sem emitir arquivos.
+Diagnóstico e recuperação local:
 
-`npm run index` compila, descobre e indexa metadados e, se habilitados, embeddings nas pastas autorizadas. Encerra ao terminar. `npm run index:retry` também recoloca imagens com falha na fila. Equivalente: `npm run index -- --retry-failed`. Ctrl+C interrompe com segurança; execute o mesmo comando para retomar. `npm start` continua sendo a estrutura de serviço: a indexação é acionada explicitamente pelo comando `index`, sem watcher automático nesta etapa.
+```powershell
+npm run status
+npm run doctor
+npm run retry-failed
+npm run reindex
+```
+
+`doctor` é somente leitura e termina com código diferente de zero quando encontra inconsistências. `reindex` invalida explicitamente metadados/embeddings ativos e os gera novamente; não apaga fotos nem o histórico de tombstones. Embeddings novos permanecem em estado de processamento até a geração HNSW ser persistida e publicada atomicamente; somente então o SQLite os promove para `INDEXED`.
+
+`npm start` executa o build já gerado, faz uma reconciliação inicial e monitora continuamente as pastas de fotos até Ctrl+C. Eventos duplicados são agregados e arquivos precisam permanecer com tamanho e data estáveis antes da indexação. Cada rajada dispara no máximo uma reconciliação por vez em Worker Thread. `npm run dev` executa os arquivos TypeScript com reinício automático ao editar módulos importados; execute o build para validar tipos. `npm run typecheck` confere tipos sem emitir arquivos.
+
+`npm run index` compila, descobre e indexa metadados e, se habilitados, embeddings nas pastas autorizadas. Encerra ao terminar. `npm run index:retry` também recoloca imagens com falha na fila. Equivalente: `npm run index -- --retry-failed`. Ctrl+C interrompe com segurança; execute o mesmo comando para retomar. No modo de serviço, os eventos do watcher nativo do Windows são tratados apenas como avisos; o scan incremental persistente continua sendo a fonte de verdade para criações, alterações, renames e remoções, inclusive as ocorridas com o programa desligado.
 
 ## Embeddings locais
 
@@ -126,7 +139,7 @@ Há exclusão de escritores concorrentes com PID e token no próprio SQLite. Ap�
 
 O log `index.progress` mostra encontradas nesta varredura, já indexadas e inalteradas, pendentes, processadas nesta execução, falhas persistidas ativas, erros de descoberta e imagens/s. A velocidade mede sucessos por tempo da fase de processamento; não inclui o scan. Falhas individuais não interrompem outras imagens. Confira `failed` e `scanErrors` no resumo final mesmo quando o comando termina normalmente; erros estruturais do banco/worker encerram com código não zero.
 
-A futura busca `/fotos_09082020` continua prevista para o interpretador de comandos e extração de data EXIF. `created_at` aqui é criação do arquivo no sistema de arquivos, **não data de captura da foto**.
+A indexação extrai `DateTimeOriginal` do EXIF para `taken_at`. Quando esse campo não existe ou é inválido, usa a modificação do arquivo e registra a origem em `taken_at_source` como `EXIF` ou `FILE_MODIFIED`. `created_at` continua sendo a criação do arquivo no sistema de arquivos, não a captura. A busca `/data` aceita dia, mês, ano e intervalo inclusivo.
 
 ## Dados privados
 

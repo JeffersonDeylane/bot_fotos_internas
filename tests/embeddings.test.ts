@@ -45,7 +45,7 @@ test('catálogo persiste vetor binário e invalida somente quando modelo ou arqu
     const job = catalog.claim(1, 0)[0]!;
     catalog.complete([{ id: job.id, status: 'INDEXED', width: 1, height: 1, error: null, modelVersion: 'model-a', embedding: new Float32Array([0.6, 0.8]) }]);
     catalog.requireEmbeddings('model-a', 2);
-    assert.equal(catalog.counts().pending, 0);
+    assert.equal(catalog.counts().pending, 1, 'vetor aguarda commit no índice antes de virar INDEXED');
     const reader = new Database(database, { readonly: true });
     try {
       const row = reader.prepare('SELECT embedding,embedding_dimension,model_version FROM photos').get() as { embedding: Buffer; embedding_dimension: number; model_version: string };
@@ -82,13 +82,14 @@ test('migração do esquema 1 preserva os registros de metadados existentes', as
   const legacy = new Database(database);
   legacy.exec(`DROP INDEX photos_model; ALTER TABLE photos DROP COLUMN embedding;
     ALTER TABLE photos DROP COLUMN embedding_dimension; ALTER TABLE photos DROP COLUMN embedding_target;
+    ALTER TABLE photos DROP COLUMN vector_revision; DROP TABLE vector_state;
     PRAGMA user_version=1;`);
   legacy.close();
   const migrated = new Catalog(database, [photos]);
   try { assert.equal(migrated.counts().indexed, 1); } finally { migrated.close(); }
   const reader = new Database(database, { readonly: true });
   try {
-    assert.equal(reader.pragma('user_version', { simple: true }), 2);
+    assert.equal(reader.pragma('user_version', { simple: true }), 4);
     const row = reader.prepare('SELECT id,width,height,embedding FROM photos').get();
     assert.deepEqual(row, { id: job.id, width: 10, height: 20, embedding: null });
   } finally { reader.close(); }

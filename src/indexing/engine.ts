@@ -7,9 +7,11 @@ import { readPhotoMetadata } from './metadata.ts';
 import type { FileSnapshot, IndexProgress } from './types.ts';
 import { LocalEmbeddingModel } from '../inference/model.ts';
 import { embedPhotoBatch } from './embeddings.ts';
+import { VectorIndex } from '../search/vector-index.ts';
 
 export interface IndexOptions {
   retryFailed?: boolean;
+  reindex?: boolean;
   onProgress?: (progress: IndexProgress) => void;
 }
 
@@ -19,6 +21,8 @@ export async function runIndex(settings: Settings, signal: AbortSignal, options:
   let lastReport = 0;
   let processingStarted = 0;
   let model: LocalEmbeddingModel | undefined;
+  let vectorModel: { version: string; dimension: number } | undefined;
+  let finalProgress: IndexProgress | undefined;
   function report(force = false): void {
     if (!force && Date.now() - lastReport < 1000) return;
     const counts = catalog.counts();
@@ -29,8 +33,10 @@ export async function runIndex(settings: Settings, signal: AbortSignal, options:
     lastReport = Date.now();
   }
   try {
+    if (options.reindex) catalog.reindexAll();
     if (settings.inference?.enabled) {
       model = await LocalEmbeddingModel.create(settings.inference);
+      vectorModel = { version: model.version, dimension: model.dimension };
       catalog.requireEmbeddings(model.version, model.dimension);
     }
     report(true);
@@ -83,6 +89,10 @@ export async function runIndex(settings: Settings, signal: AbortSignal, options:
     }
     progress.phase = signal.aborted ? 'interrupted' : 'completed';
     report(true);
-    return { ...progress };
+    finalProgress = { ...progress };
   } finally { try { await model?.close(); } finally { catalog.close(); } }
+  if (vectorModel && !signal.aborted) {
+    await VectorIndex.synchronize(path.join(settings.storage.databaseDirectory, 'catalog.sqlite'), settings.storage.indexDirectory, vectorModel.version, vectorModel.dimension);
+  }
+  return finalProgress!;
 }

@@ -5,10 +5,11 @@ import { AppError } from '../core/errors.ts';
 
 const controller = new AbortController();
 parentPort?.on('message', message => { if (message === 'stop') controller.abort(); });
-const input = workerData as { settings: Settings; retryFailed: boolean };
+const input = workerData as { settings: Settings; retryFailed: boolean; reindex: boolean };
 try {
   const result = await runIndex(input.settings, controller.signal, {
     retryFailed: input.retryFailed,
+    reindex: input.reindex,
     onProgress: progress => parentPort?.postMessage({ type: 'progress', progress }),
   });
   parentPort?.postMessage({ type: 'done', result });

@@ -10,6 +10,8 @@ import { Logger, parseLogLevel } from './logging/logger.ts';
 import { downloadModel } from './inference/download.ts';
 import { runInferenceTask } from './inference/service.ts';
 import { prepareFixtures } from './inference/fixtures.ts';
+import { benchmarkVectorIndex } from './search/benchmark.ts';
+import { doctor, systemStatus } from './admin/diagnostics.ts';
 
 // Resolve tanto src/main.ts quanto dist/src/main.js sem depender do cwd.
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -48,15 +50,28 @@ try {
   const command = process.argv[2] ?? 'start';
   const retryFailed = command === 'index' && process.argv[3] === '--retry-failed';
   const benchmarkLimit = process.argv[3] === '--limit' ? Number(process.argv[4]) : 8;
+  const vectorCount = process.argv[3] === '--count' ? Number(process.argv[4]) : 10_000;
   const extra = command === 'benchmark' && process.argv[3] === '--limit' ? 5 : command === 'text' || retryFailed ? 4 : 3;
-  if (!['start', 'index', 'model:prepare', 'fixtures:prepare', 'benchmark', 'text'].includes(command) || process.argv.length > extra ||
+  if (!['start', 'index', 'retry-failed', 'reindex', 'doctor', 'status', 'model:prepare', 'fixtures:prepare', 'benchmark', 'vector:benchmark', 'text'].includes(command) || process.argv.length > (command === 'vector:benchmark' ? 5 : extra) ||
       (command === 'benchmark' && (!Number.isInteger(benchmarkLimit) || benchmarkLimit < 1 || benchmarkLimit > 128)) ||
+      (command === 'vector:benchmark' && ![10_000, 50_000, 100_000].includes(vectorCount)) ||
       (command === 'text' && !process.argv[3]?.trim())) {
-    throw new AppError('INVALID_COMMAND', 'Use start, index [--retry-failed], model:prepare, benchmark [--limit N] ou text "consulta".');
+    throw new AppError('INVALID_COMMAND', 'Use start, index, retry-failed, reindex, doctor, status, model:prepare, benchmark, vector:benchmark ou text "consulta".');
   }
   const settings = await loadSettings(projectRoot, process.env.PHOTO_CONFIG ?? 'config/settings.json');
   if (!lifecycle.controller.signal.aborted) {
-    if (command === 'fixtures:prepare') {
+    if (command === 'doctor') {
+      const result = await doctor(settings);
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      await stop('doctor.completed', !result.ok);
+    } else if (command === 'status') {
+      process.stdout.write(`${JSON.stringify(systemStatus(settings), null, 2)}\n`);
+      await stop('status.completed');
+    } else if (command === 'vector:benchmark') {
+      const result = await benchmarkVectorIndex(settings.storage.indexDirectory, vectorCount);
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+      await stop('vector.benchmark.completed');
+    } else if (command === 'fixtures:prepare') {
       const download = prepareFixtures(settings.storage.cacheDirectory, lifecycle.controller.signal);
       lifecycle.register(async () => { await download; });
       await download;
@@ -72,8 +87,8 @@ try {
       const result = await inference;
       process.stdout.write(`${JSON.stringify(result)}\n`);
       await stop('inference.completed');
-    } else if (command === 'index') {
-      const indexing = startIndexing(settings, logger, lifecycle.controller.signal, retryFailed);
+    } else if (command === 'index' || command === 'retry-failed' || command === 'reindex') {
+      const indexing = startIndexing(settings, logger, lifecycle.controller.signal, retryFailed || command === 'retry-failed', command === 'reindex');
       lifecycle.register(async () => { await indexing; });
       await indexing;
       await stop('index.completed');

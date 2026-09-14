@@ -12,9 +12,14 @@
     "start": "node dist/src/main.js",
     "index": "npm run build && node dist/src/main.js index",
     "index:retry": "npm run build && node dist/src/main.js index --retry-failed",
+    "retry-failed": "npm run build && node dist/src/main.js retry-failed",
+    "reindex": "npm run build && node dist/src/main.js reindex",
+    "doctor": "npm run build && node dist/src/main.js doctor",
+    "status": "npm run build && node dist/src/main.js status",
     "model:prepare": "npm run build && node dist/src/main.js model:prepare",
     "test:fixtures": "npm run build && node dist/src/main.js fixtures:prepare",
     "benchmark": "npm run build && node dist/src/main.js benchmark",
+    "benchmark:index": "npm run build && node dist/src/main.js vector:benchmark",
     "embed:text": "npm run build && node dist/src/main.js text",
     "test:inference": "npm run build && node --test dist/tests/integration/*.test.js",
     "test": "npm run build && node --test dist/tests/*.test.js",
@@ -23,12 +28,16 @@
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",
     "@types/node": "22.16.5",
+    "@types/qrcode-terminal": "0.12.2",
     "typescript": "5.8.3"
   },
   "dependencies": {
     "@huggingface/tokenizers": "0.2.0",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
     "better-sqlite3": "13.0.3",
     "onnxruntime-node": "1.24.3",
-    "sharp": "0.35.4"
+    "qrcode-terminal": "0.12.0",
+    "sharp": "0.35.4",
+    "usearch": "2.26.2"
   }
 }

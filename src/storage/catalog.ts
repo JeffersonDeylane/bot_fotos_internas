@@ -19,7 +19,7 @@ export class Catalog {
       this.db.pragma('cache_size = -8192');
       this.db.pragma('temp_store = FILE');
       const schema = this.db.pragma('user_version', { simple: true });
-      if (schema !== 0 && schema !== 1 && schema !== 2) throw new AppError('SCHEMA_VERSION', 'Versão do catálogo não suportada.');
+      if (schema !== 0 && schema !== 1 && schema !== 2 && schema !== 3 && schema !== 4) throw new AppError('SCHEMA_VERSION', 'Versão do catálogo não suportada.');
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS writer_lock (
           id INTEGER PRIMARY KEY CHECK(id=1), pid INTEGER NOT NULL, host TEXT NOT NULL, token TEXT NOT NULL
@@ -62,14 +62,29 @@ export class Catalog {
           if (lock.host !== hostname() || alive) throw new AppError('INDEX_ALREADY_RUNNING', 'Já existe um indexador ativo ou um bloqueio que não pode ser recuperado com segurança.');
         }
         this.db.prepare('INSERT OR REPLACE INTO writer_lock VALUES (1,?,?,?)').run(process.pid, hostname(), this.token);
-        if (schema !== 2) {
+        if (schema < 2) {
           this.db.exec(`ALTER TABLE photos ADD COLUMN embedding BLOB;
             ALTER TABLE photos ADD COLUMN embedding_dimension INTEGER;
             ALTER TABLE photos ADD COLUMN embedding_target TEXT;
             CREATE INDEX photos_model ON photos(model_version,embedding_dimension) WHERE deleted_at IS NULL;
             PRAGMA user_version = 2;`);
         }
-        this.db.prepare("UPDATE photos SET status='PENDING' WHERE status='PROCESSING'").run();
+        if (schema < 3) {
+          this.db.exec(`ALTER TABLE photos ADD COLUMN vector_revision INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE IF NOT EXISTS vector_state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL);
+            INSERT OR IGNORE INTO vector_state VALUES (1,0);
+            UPDATE vector_state SET revision=revision+1;
+            UPDATE photos SET vector_revision=(SELECT revision FROM vector_state);
+            PRAGMA user_version = 3;`);
+        }
+        if (schema < 4) {
+          const columns = new Set((this.db.pragma('table_info(photos)') as { name: string }[]).map(column => column.name));
+          if (!columns.has('taken_at')) this.db.exec('ALTER TABLE photos ADD COLUMN taken_at REAL');
+          if (!columns.has('taken_at_source')) this.db.exec("ALTER TABLE photos ADD COLUMN taken_at_source TEXT CHECK(taken_at_source IN ('EXIF','FILE_MODIFIED'))");
+          this.db.exec(`CREATE INDEX IF NOT EXISTS photos_taken ON photos(taken_at) WHERE deleted_at IS NULL;
+            PRAGMA user_version = 4;`);
+        }
+        this.db.prepare("UPDATE photos SET status='PENDING' WHERE status='PROCESSING' AND embedding IS NULL").run();
         this.db.prepare("UPDATE scans SET status='INTERRUPTED', finished_at=? WHERE status='RUNNING'").run(new Date().toISOString());
         this.db.prepare('UPDATE roots SET active=0').run();
         const add = this.db.prepare('INSERT INTO roots(path,path_key,active) VALUES (?,?,1) ON CONFLICT(path_key) DO UPDATE SET active=1,path=excluded.path');
@@ -96,19 +111,25 @@ export class Catalog {
         deleted_at=NULL,status=CASE WHEN @changed THEN 'PENDING' ELSE photos.status END,
         width=CASE WHEN @changed THEN NULL ELSE photos.width END,
         height=CASE WHEN @changed THEN NULL ELSE photos.height END,
+        taken_at=CASE WHEN @changed THEN NULL ELSE photos.taken_at END,
+        taken_at_source=CASE WHEN @changed THEN NULL ELSE photos.taken_at_source END,
         model_version=CASE WHEN @changed THEN NULL ELSE photos.model_version END,
         embedding=CASE WHEN @changed THEN NULL ELSE photos.embedding END,
         embedding_dimension=CASE WHEN @changed THEN NULL ELSE photos.embedding_dimension END,
+        vector_revision=CASE WHEN @changed THEN (SELECT revision+1 FROM vector_state WHERE id=1) ELSE photos.vector_revision END,
         error=CASE WHEN @changed THEN NULL ELSE photos.error END
     `);
     return this.db.transaction(() => {
       let unchanged = 0;
+      let changedAny = false;
       for (const file of files) {
         const old = existing.get(file.pathKey) as { status: string; fingerprint: string; metadata_version: string; deleted_at: string | null } | undefined;
         const changed = !old || old.fingerprint !== file.fingerprint || old.metadata_version !== METADATA_VERSION || old.deleted_at !== null;
+        changedAny ||= changed;
         if (!changed && old.status === 'INDEXED') unchanged++;
         upsert.run({ ...file, rootId, scanId, version: METADATA_VERSION, changed: Number(changed) });
       }
+      if (changedAny) this.db.prepare('UPDATE vector_state SET revision=revision+1 WHERE id=1').run();
       return unchanged;
     })();
   }
@@ -123,7 +144,13 @@ export class Catalog {
   finishScan(rootId: number, scanId: string, status: 'COMPLETED' | 'INCOMPLETE' | 'INTERRUPTED'): number {
     return this.db.transaction(() => {
       const now = new Date().toISOString();
-      const removed = status === 'COMPLETED' ? this.db.prepare('UPDATE photos SET deleted_at=? WHERE root_id=? AND seen_scan<>? AND deleted_at IS NULL').run(now, rootId, scanId).changes : 0;
+      const removedRows = status === 'COMPLETED' ? this.db.prepare('SELECT id FROM photos WHERE root_id=? AND seen_scan<>? AND deleted_at IS NULL').all(rootId, scanId) as { id: number }[] : [];
+      let removed = 0;
+      if (removedRows.length) {
+        this.db.prepare('UPDATE vector_state SET revision=revision+1 WHERE id=1').run();
+        const revision = (this.db.prepare('SELECT revision FROM vector_state WHERE id=1').get() as { revision: number }).revision;
+        removed = this.db.prepare('UPDATE photos SET deleted_at=?,vector_revision=? WHERE root_id=? AND seen_scan<>? AND deleted_at IS NULL').run(now, revision, rootId, scanId).changes;
+      }
       this.db.prepare('UPDATE scans SET status=?,finished_at=? WHERE id=?').run(status, now, scanId);
       return removed;
     })();
@@ -131,6 +158,16 @@ export class Catalog {
 
   retryFailed(): void {
     this.db.prepare("UPDATE photos SET status='PENDING' WHERE status='FAILED' AND deleted_at IS NULL AND root_id IN (SELECT id FROM roots WHERE active=1)").run();
+  }
+
+  reindexAll(): void {
+    this.db.transaction(() => {
+      this.db.prepare('UPDATE vector_state SET revision=revision+1 WHERE id=1').run();
+      const revision = (this.db.prepare('SELECT revision FROM vector_state WHERE id=1').get() as { revision: number }).revision;
+      this.db.prepare(`UPDATE photos SET status='PENDING',width=NULL,height=NULL,taken_at=NULL,taken_at_source=NULL,embedding=NULL,
+        embedding_dimension=NULL,model_version=NULL,embedding_target=NULL,error=NULL,vector_revision=?
+        WHERE deleted_at IS NULL AND root_id IN (SELECT id FROM roots WHERE active=1)`).run(revision);
+    })();
   }
 
   requireEmbeddings(version: string, dimension: number): void {
@@ -154,19 +191,24 @@ export class Catalog {
   }
 
   complete(results: readonly JobResult[]): void {
-    const update = this.db.prepare(`UPDATE photos SET status=@status,width=@width,height=@height,error=@error,
-      embedding=@embedding,embedding_dimension=@dimension,model_version=@modelVersion,
+    const update = this.db.prepare(`UPDATE photos SET status=@status,width=@width,height=@height,taken_at=@takenAt,taken_at_source=@takenAtSource,error=@error,
+      embedding=@embedding,embedding_dimension=@dimension,model_version=@modelVersion,vector_revision=@revision,
       last_indexed_at=CASE WHEN @status='INDEXED' THEN @now ELSE last_indexed_at END WHERE id=@id`);
     this.db.transaction(() => {
       const now = new Date().toISOString();
       for (const result of results) {
+        this.db.prepare('UPDATE vector_state SET revision=revision+1 WHERE id=1').run();
+        const revision = (this.db.prepare('SELECT revision FROM vector_state WHERE id=1').get() as { revision: number }).revision;
         const vector = result.status === 'INDEXED' ? result.embedding : undefined;
         if (vector && (!result.modelVersion || vector.length === 0 || !vector.every(Number.isFinite))) throw new Error('INVALID_EMBEDDING');
         // Serialização explícita little-endian: formato estável, 4 bytes por dimensão.
         const bytes = vector ? Buffer.allocUnsafe(vector.length * 4) : null;
         if (bytes && vector) for (let i = 0; i < vector.length; i++) bytes.writeFloatLE(vector[i]!, i * 4);
-        update.run({ id: result.id, status: result.status, width: result.width, height: result.height, error: result.error,
-          now, embedding: bytes, dimension: vector?.length ?? null, modelVersion: vector ? result.modelVersion! : null });
+        // Com vetor, PROCESSING significa "SQLite pronto, aguardando commit atômico do HNSW".
+        const storedStatus = vector ? 'PROCESSING' : result.status;
+        update.run({ id: result.id, status: storedStatus, width: result.width, height: result.height,
+          takenAt: result.takenAt ?? null, takenAtSource: result.takenAtSource ?? null, error: result.error,
+          now, revision, embedding: bytes, dimension: vector?.length ?? null, modelVersion: vector ? result.modelVersion! : null });
       }
     })();
   }
@@ -187,7 +229,7 @@ export class Catalog {
     if (!this.db.open) return;
     try {
       this.db.transaction(() => {
-        this.db.prepare("UPDATE photos SET status='PENDING' WHERE status='PROCESSING'").run();
+        this.db.prepare("UPDATE photos SET status='PENDING' WHERE status='PROCESSING' AND embedding IS NULL").run();
         this.db.prepare('DELETE FROM writer_lock WHERE token=?').run(this.token);
       })();
     } finally { this.db.close(); }

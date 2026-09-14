@@ -4,9 +4,9 @@ import type { Logger } from '../logging/logger.ts';
 import type { IndexProgress } from './types.ts';
 import { AppError } from '../core/errors.ts';
 
-export function startIndexing(settings: Settings, logger: Logger, signal: AbortSignal, retryFailed: boolean): Promise<void> {
+export function startIndexing(settings: Settings, logger: Logger, signal: AbortSignal, retryFailed: boolean, reindex = false): Promise<void> {
   const extension = import.meta.url.endsWith('.ts') ? 'ts' : 'js';
-  const worker = new Worker(new URL(`../workers/indexing.worker.${extension}`, import.meta.url), { workerData: { settings, retryFailed } });
+  const worker = new Worker(new URL(`../workers/indexing.worker.${extension}`, import.meta.url), { workerData: { settings, retryFailed, reindex } });
   return new Promise((resolve, reject) => {
     let failure: Error | undefined;
     let finished = false;

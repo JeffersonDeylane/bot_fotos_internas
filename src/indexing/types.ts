@@ -1,4 +1,4 @@
-export const METADATA_VERSION = 'metadata-v1';
+export const METADATA_VERSION = 'metadata-v2-exif-date';
 export type IndexStatus = 'PENDING' | 'PROCESSING' | 'INDEXED' | 'FAILED';
 
 export interface FileSnapshot {
@@ -25,6 +25,8 @@ export interface JobResult {
   status: IndexStatus;
   width: number | null;
   height: number | null;
+  takenAt?: number | null;
+  takenAtSource?: 'EXIF' | 'FILE_MODIFIED' | null;
   error: string | null;
 }
 

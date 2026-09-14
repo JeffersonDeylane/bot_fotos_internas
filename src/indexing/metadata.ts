@@ -2,6 +2,7 @@ import sharp from 'sharp';
 import { authorizePhotoFile } from '../security/allowed-paths.ts';
 import { snapshot } from './scanner.ts';
 import type { JobResult, PhotoJob } from './types.ts';
+import { readExifDateTimeOriginal } from './exif-date.ts';
 
 sharp.concurrency(1);
 sharp.cache({ memory: 16, files: 0, items: 32 });
@@ -21,7 +22,9 @@ export async function readPhotoMetadata(job: PhotoJob, signal: AbortSignal): Pro
       return { ...result, error: signal.aborted ? null : 'FILE_CHANGED_DURING_INDEX' };
     }
     // Dimensões do arquivo, antes de aplicar orientação EXIF.
-    return { ...result, status: 'INDEXED', width: metadata.width, height: metadata.height };
+    const exifDate = readExifDateTimeOriginal(metadata.exif);
+    return { ...result, status: 'INDEXED', width: metadata.width, height: metadata.height,
+      takenAt: exifDate ?? before.modifiedAt, takenAtSource: exifDate === null ? 'FILE_MODIFIED' : 'EXIF' };
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : 'METADATA_READ_FAILED';
     // O diagnóstico fica apenas no catálogo privado, nunca nos logs públicos.
