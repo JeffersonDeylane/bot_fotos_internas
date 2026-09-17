@@ -4,6 +4,10 @@ Catálogo incremental local de fotos em Node.js 24 e TypeScript, com SQLite, Sha
 
 ## Preparação no PowerShell
 
+Após atualizar um projeto já configurado pelo GitHub, execute `npm ci`, `npm run build` e `npm run doctor`. Preserve `config/settings.json` e `.env` existentes: não copie os exemplos por cima deles. Se o catálogo ainda não existir, execute `npm run index` antes do diagnóstico.
+
+O módulo `src/sessions/user-sessions.ts` contém somente código de navegação e precisa ser versionado. Credenciais continuam em `data/auth` (ou no diretório privado configurado). Os testes executam um arquivo por vez para limitar o consumo de memória neste PC. O modo `dev` utiliza a transformação experimental de TypeScript do Node 24; para uso normal, prefira `npm run build` e `npm start`.
+
 Execute dentro desta pasta:
 
 ```powershell
@@ -146,3 +150,11 @@ A indexação extrai `DateTimeOriginal` do EXIF para `taken_at`. Quando esse cam
 O `.gitignore` permite na raiz apenas código, testes, manifests, documentação e exemplos. Configuração real, `.env`, dependências, build, banco, índice, cache, sessão, modelos e formatos comuns de fotos ficam ignorados. Guarde arquivos privados em `private/` ou fora do projeto, nunca em `src/` ou `tests/`. `.gitignore` não remove arquivos que já tenham sido versionados. Revise `git status` antes de publicar; esta etapa não cria commits nem envia arquivos.
 
 A autorização de caminhos resolve caminhos reais no scanner e novamente antes/depois da leitura de metadados. O futuro envio deverá validá-los novamente. Não há reconhecimento facial, OCR ou envio de fotos nesta estrutura.
+
+### Arquivos na navega??o
+
+Ao entrar em uma pasta ou usar `/pastas`, o bot mostra subpastas e at? 20 arquivos. Use `/mais-arquivos` para continuar a lista e `/abrir Documento 1.pdf` para receber um arquivo da pasta atual como documento, preservando o nome e o conte?do original. Use o nome completo, incluindo a extens?o, sem aspas. `/abrir <n?mero>` continua selecionando pastas; se existir um arquivo com esse nome num?rico exato, o arquivo tem prioridade.
+
+A listagem de arquivos usa um iterador e guarda somente uma p?gina na mem?ria. A ordem ? a fornecida pelo sistema de arquivos; altera??es na pasta durante a pagina??o podem mudar a sequ?ncia. Use `/pastas` para atualizar. Links simb?licos n?o s?o listados, e o caminho ? validado novamente antes do envio. O envio depende dos limites do WhatsApp e da conex?o.
+
+Envie `enviar todos arquivos` (ou `/enviar todos arquivos`) para receber todos os arquivos da pasta atual como documentos. Subpastas e links n?o s?o inclu?dos. O envio ? sequencial, sem carregar a lista completa na mem?ria; falhas individuais n?o interrompem os demais arquivos. Ao terminar, o bot informa os totais enviados e as falhas. Um novo pedido durante o envio n?o inicia outra c?pia do lote.

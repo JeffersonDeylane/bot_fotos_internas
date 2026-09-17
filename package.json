@@ -7,7 +7,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "dev": "node --watch --experimental-strip-types src/main.ts",
+    "dev": "node --watch --experimental-transform-types src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/main.js",
     "index": "npm run build && node dist/src/main.js index",
@@ -22,7 +22,7 @@
     "benchmark:index": "npm run build && node dist/src/main.js vector:benchmark",
     "embed:text": "npm run build && node dist/src/main.js text",
     "test:inference": "npm run build && node --test dist/tests/integration/*.test.js",
-    "test": "npm run build && node --test dist/tests/*.test.js",
+    "test": "npm run build && node --test --test-concurrency=1 dist/tests/*.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

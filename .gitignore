@@ -22,6 +22,9 @@ cache/
 auth/
 session/
 sessions/
+!/src/sessions/
+/src/sessions/*
+!/src/sessions/*.ts
 .wwebjs_auth/
 .wwebjs_cache/
 .env
@@ -54,4 +57,3 @@ sessions/
 *.p12
 *.csv
 *.xlsx
-

@@ -8,7 +8,10 @@ import { UserSessions } from '../sessions/user-sessions.ts';
 import { SearchService } from '../search/service.ts';
 import { parseDateSearch, searchPhotosByDate } from '../search/date-service.ts';
 
-export interface CommandReply { texts: string[]; photos: string[] }
+export interface CommandReply { texts: string[]; photos: string[]; files?: string[]; allFilesDirectory?: string }
+export function isSendAllCommand(text: string): boolean {
+  return /^\/?enviar\s+todos\s+arquivos$/i.test(text.trim());
+}
 const EMPTY = (): CommandReply => ({ texts: [], photos: [] });
 
 export class CommandProcessor {
@@ -31,11 +34,20 @@ export class CommandProcessor {
     const lower = text.toLocaleLowerCase('pt-BR');
     const session = this.sessions.get(jid);
     try {
-      if (lower === '/ajuda') return { texts: [HELP.replace('/mais', '/data [quantidade] DD/MM/AAAA, MM/AAAA ou AAAA\n/data [quantidade] DD/MM/AAAA a DD/MM/AAAA\n/mais')], photos: [] };
-      if (lower === '/mostrar-pastas') return this.folderPage(session, this.navigation.rootsListing());
-      if (lower === '/pastas') return this.folderPage(session, session.directory ? await this.navigation.list(session.directory) : this.navigation.rootsListing());
+      if (isSendAllCommand(text)) {
+        if (!session.directory) throw new Error('NO_CURRENT_FOLDER');
+        const directory = await authorizeDirectory(session.directory, this.settings.photos.directories);
+        return { texts: ['Enviando os arquivos da pasta atual, sem incluir subpastas.'], photos: [], allFilesDirectory: directory };
+      }
+      if (lower === '/ajuda') return { texts: [(HELP + '\nenviar todos arquivos\n/abrir <nome do arquivo>\n/mais-arquivos').replace('/mais', '/data [quantidade] DD/MM/AAAA, MM/AAAA ou AAAA\n/data [quantidade] DD/MM/AAAA a DD/MM/AAAA\n/mais')], photos: [] };
+      if (lower === '/mostrar-pastas') return await this.folderPage(session, this.navigation.rootsListing());
+      if (lower === '/pastas') return await this.folderPage(session, session.directory ? await this.navigation.list(session.directory) : this.navigation.rootsListing());
       if (lower === '/mais-pastas') return this.nextFolders(session);
-      if (lower === '/voltar') return this.folderPage(session, await this.navigation.back(session));
+      if (lower === '/mais-arquivos') {
+        if (!session.filePage || session.filePage.directory !== session.directory) return { texts: ['Não há mais arquivos para listar.'], photos: [] };
+        return { texts: [await this.fileListing(session, session.filePage.offset)], photos: [] };
+      }
+      if (lower === '/voltar') return await this.folderPage(session, await this.navigation.back(session));
       if (lower === '/onde') {
         const listing = session.directory ? await this.navigation.list(session.directory) : this.navigation.rootsListing();
         return { texts: [`📍 Local atual: ${session.directory ? this.navigation.display(session.directory) : 'Raiz'}\nSubpastas: ${listing.folders.length}\nFotos: ${listing.photos}`], photos: [] };
@@ -47,8 +59,18 @@ export class CommandProcessor {
         if (!session.directory) throw new Error('NO_CURRENT_FOLDER');
         return this.photoPage(session, await this.navigation.photos(session.directory), `📷 ${this.navigation.display(session.directory)}`, parsePhotoAmount(showAmount[1]));
       }
-      if (lower.startsWith('/abrir-')) return this.folderPage(session, await this.navigation.open(session, text.slice('/abrir-'.length)));
-      if (lower.startsWith('/abrir ')) return this.folderPage(session, await this.navigation.open(session, text.slice('/abrir '.length).trim()));
+      if (lower.startsWith('/abrir-')) return await this.folderPage(session, await this.navigation.open(session, text.slice('/abrir-'.length)));
+      if (lower.startsWith('/abrir ')) {
+        const name = text.slice('/abrir '.length).trim();
+        if (session.directory) {
+          try {
+            return { texts: [], photos: [], files: [await this.navigation.file(session.directory, name)] };
+          } catch (error) {
+            if (!(error instanceof Error) || error.message !== 'FILE_NOT_FOUND') throw error;
+          }
+        }
+        return await this.folderPage(session, await this.navigation.open(session, name));
+      }
       if (lower.startsWith('/mostrar-')) {
         const name = text.slice('/mostrar-'.length).trim(); rejectUnsafeName(name);
         const base = session.directory;
@@ -56,7 +78,7 @@ export class CommandProcessor {
         let matches = path.basename(base).localeCompare(name, 'pt-BR', { sensitivity: 'base' }) === 0 ? [base] :
           (await this.navigation.list(base)).folders.filter(folder => path.basename(folder).localeCompare(name, 'pt-BR', { sensitivity: 'base' }) === 0);
         if (!matches.length) matches = await this.navigation.findFolders(name);
-        if (matches.length > 1) return this.folderPage(session, { title: `Foram encontradas ${matches.length} pastas chamadas "${name}"`, folders: matches, photos: 0 });
+        if (matches.length > 1) return await this.folderPage(session, { title: `Foram encontradas ${matches.length} pastas chamadas "${name}"`, folders: matches, photos: 0 });
         if (!matches.length) throw new Error('FOLDER_NOT_FOUND');
         const safe = await authorizeDirectory(matches[0]!, this.settings.photos.directories);
         return this.photoPage(session, await this.navigation.photos(safe), `📷 ${this.navigation.display(safe)}`);
@@ -86,10 +108,19 @@ export class CommandProcessor {
     }
   }
 
-  private folderPage(session: ReturnType<UserSessions['get']>, listing: FolderListing): CommandReply {
+  private async folderPage(session: ReturnType<UserSessions['get']>, listing: FolderListing): Promise<CommandReply> {
     session.lastFolders = listing.folders;
     session.pending = { kind: 'folders', folders: listing.folders, offset: 20 };
-    return { texts: [this.formatFolders(listing.title, listing.folders, 0)], photos: [] };
+    delete session.filePage;
+    const files = session.directory && listing.title === this.navigation.display(session.directory) ? `\n\n${await this.fileListing(session, 0)}` : '';
+    return { texts: [this.formatFolders(listing.title, listing.folders, 0) + files], photos: [] };
+  }
+  private async fileListing(session: ReturnType<UserSessions['get']>, offset: number): Promise<string> {
+    const directory = session.directory!;
+    const page = await this.navigation.filesPage(directory, offset);
+    if (page.more) session.filePage = { directory, offset: offset + page.names.length };
+    else delete session.filePage;
+    return `Arquivos:\n${page.names.length ? page.names.map(name => `• ${name}`).join('\n') : 'Nenhum arquivo.'}\nUse /abrir <nome do arquivo> para receber o arquivo.${page.more ? '\nUse /mais-arquivos para continuar.' : ''}`;
   }
   private nextFolders(session: ReturnType<UserSessions['get']>): CommandReply {
     if (session.pending?.kind !== 'folders') return { texts: ['Não há listagem de pastas para continuar.'], photos: [] };
