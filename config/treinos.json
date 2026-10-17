@@ -1,0 +1,11 @@
+{
+  "grupo": "O treino",
+  "pessoas": [
+    {
+      "nome": "Jefferson",
+      "metas": ["100 flexões1", "100 flexões2", "100 flexões3", "100 flexões4", "100 flexões5", "200 abdominais1", "200 abdominais2", "100 abdominais3", "100 agachamentos", "3 minutos isometria", "10 barras"]
+    },
+    { "nome": "Wendell", "metas": ["30 flexões", "30 abdominais"] },
+    { "nome": "Gilber", "metas": ["5 flexões1", "5 flexões2"] }
+  ]
+}

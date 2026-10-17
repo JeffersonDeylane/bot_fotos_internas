@@ -4,6 +4,27 @@ Catálogo incremental local de fotos em Node.js 24 e TypeScript, com SQLite, Sha
 
 ## Preparação no PowerShell
 
+### Instalação em outro PC
+
+Instale Git e Node.js **24.x**. No PowerShell:
+
+```powershell
+git clone https://github.com/JeffersonDeylane/bot_fotos_internas.git
+cd bot_fotos_internas
+npm ci
+Copy-Item config/settings.example.json config/settings.json
+New-Item -ItemType Directory -Force photos, data/database, data/index, data/cache, data/auth
+```
+
+Edite `config/settings.json`: ajuste `photos.directories` para as pastas existentes no novo PC e preencha `whatsapp.allowedNumbers` com seu número no formato internacional. Se quiser usar apenas os treinos, mantenha `./photos` e `inference.enabled=false`. As metas estão em `config/treinos.json`.
+
+```powershell
+npm run build
+npm start
+```
+
+Vincule o novo PC pelo QR Code em **WhatsApp > Aparelhos conectados > Conectar aparelho**. O Git não transporta a sessão do WhatsApp, configurações locais, fotos, banco, índices nem modelos. Para busca de fotos por IA, siga a preparação do modelo abaixo. Mantenha somente um PC executando o bot de treinos para evitar enquetes duplicadas.
+
 Execute dentro desta pasta:
 
 ```powershell
@@ -146,3 +167,14 @@ A indexação extrai `DateTimeOriginal` do EXIF para `taken_at`. Quando esse cam
 O `.gitignore` permite na raiz apenas código, testes, manifests, documentação e exemplos. Configuração real, `.env`, dependências, build, banco, índice, cache, sessão, modelos e formatos comuns de fotos ficam ignorados. Guarde arquivos privados em `private/` ou fora do projeto, nunca em `src/` ou `tests/`. `.gitignore` não remove arquivos que já tenham sido versionados. Revise `git status` antes de publicar; esta etapa não cria commits nem envia arquivos.
 
 A autorização de caminhos resolve caminhos reais no scanner e novamente antes/depois da leitura de metadados. O futuro envio deverá validá-los novamente. Não há reconhecimento facial, OCR ou envio de fotos nesta estrutura.
+# Enquetes de treinos
+
+O bot envia diariamente, a partir das **06:00 no horário de Brasília**, uma enquete por pessoa no grupo **O treino**. Cada título contém o nome e a data (`Jefferson 16/10/2026`) e permite marcar várias opções.
+
+Edite **config/treinos.json** para alterar o grupo, os nomes ou as metas. Cada item de `metas` é uma opção da enquete; informe entre 2 e 12 opções diferentes por pessoa. As alterações são lidas no próximo envio, sem reiniciar o bot. Elas não alteram enquetes já publicadas.
+
+Use **/treinos** no grupo configurado ou no privado do bot com um número autorizado para enviar novamente todas as enquetes do dia ao grupo. O comando manual pode gerar novas enquetes mesmo após o envio automático.
+
+O bot precisa estar conectado ao WhatsApp e participar de um único grupo com o nome configurado. A conexão do WhatsApp depende de haver números em `whatsapp.allowedNumbers`, como no funcionamento existente. Execute o bot a partir da pasta do projeto e reinicie-o após instalar esta funcionalidade.
+
+O agendamento verifica o horário a cada 30 segundos. Se o bot estiver desligado às 06:00, ele envia as pendências do dia ao conectar depois desse horário. O progresso automático fica em `treinos-enviados.json` no diretório do banco de dados; preserve esse arquivo para evitar reenvios após reiniciar. Uma interrupção entre a confirmação do WhatsApp e a gravação local pode repetir a última enquete. Não há reposição de dias anteriores.

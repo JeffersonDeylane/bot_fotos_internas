@@ -31,7 +31,7 @@ export class CommandProcessor {
     const lower = text.toLocaleLowerCase('pt-BR');
     const session = this.sessions.get(jid);
     try {
-      if (lower === '/ajuda') return { texts: [HELP.replace('/mais', '/data [quantidade] DD/MM/AAAA, MM/AAAA ou AAAA\n/data [quantidade] DD/MM/AAAA a DD/MM/AAAA\n/mais')], photos: [] };
+      if (lower === '/ajuda') return { texts: [HELP.replace('/mais', '/data [quantidade] DD/MM/AAAA, MM/AAAA ou AAAA\n/data [quantidade] DD/MM/AAAA a DD/MM/AAAA\n/mais') + '\n\nTREINOS\n/treinos — envia as enquetes para o grupo configurado'], photos: [] };
       if (lower === '/mostrar-pastas') return this.folderPage(session, this.navigation.rootsListing());
       if (lower === '/pastas') return this.folderPage(session, session.directory ? await this.navigation.list(session.directory) : this.navigation.rootsListing());
       if (lower === '/mais-pastas') return this.nextFolders(session);

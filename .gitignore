@@ -9,6 +9,7 @@
 !/config/
 /config/*
 !/config/settings.example.json
+!/config/treinos.json
 !/src/
 !/tests/
 # Defesa adicional, inclusive dentro de src e tests.
@@ -22,6 +23,8 @@ cache/
 auth/
 session/
 sessions/
+!/src/sessions/
+!/src/sessions/user-sessions.ts
 .wwebjs_auth/
 .wwebjs_cache/
 .env

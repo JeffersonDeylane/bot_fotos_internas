@@ -16,15 +16,15 @@ export class Application {
   }
 
   async start(): Promise<void> {
+    if (this.settings.whatsapp.allowedNumbers.length) {
+      this.whatsapp = new WhatsAppService(this.settings, this.logger);
+      await this.whatsapp.start();
+    }
     this.monitor = new DirectoryMonitor(this.settings.photos.directories, {
       run: signal => startIndexing(this.settings, this.logger, signal, false),
       onError: error => this.logger.error('watcher.failed', error),
     });
     await this.monitor.start();
-    if (this.settings.whatsapp.allowedNumbers.length) {
-      this.whatsapp = new WhatsAppService(this.settings, this.logger);
-      await this.whatsapp.start();
-    }
     this.logger.log('info', 'application.ready', {
       photoDirectoryCount: this.settings.photos.directories.length,
       maxWorkers: this.settings.processing.maxWorkers,
