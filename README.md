@@ -25,6 +25,10 @@ npm start
 
 Vincule o novo PC pelo QR Code em **WhatsApp > Aparelhos conectados > Conectar aparelho**. O Git não transporta a sessão do WhatsApp, configurações locais, fotos, banco, índices nem modelos. Para busca de fotos por IA, siga a preparação do modelo abaixo. Mantenha somente um PC executando o bot de treinos para evitar enquetes duplicadas.
 
+Após atualizar um projeto já configurado pelo GitHub, execute `npm ci`, `npm run build` e `npm run doctor`. Preserve `config/settings.json` e `.env` existentes: não copie os exemplos por cima deles. Se o catálogo ainda não existir, execute `npm run index` antes do diagnóstico.
+
+O módulo `src/sessions/user-sessions.ts` contém somente código de navegação e precisa ser versionado. Credenciais continuam em `data/auth` (ou no diretório privado configurado). Os testes executam um arquivo por vez para limitar o consumo de memória neste PC. O modo `dev` utiliza a transformação experimental de TypeScript do Node 24; para uso normal, prefira `npm run build` e `npm start`.
+
 Execute dentro desta pasta:
 
 ```powershell
@@ -178,3 +182,12 @@ Use **/treinos** no grupo configurado ou no privado do bot com um número autori
 O bot precisa estar conectado ao WhatsApp e participar de um único grupo com o nome configurado. A conexão do WhatsApp depende de haver números em `whatsapp.allowedNumbers`, como no funcionamento existente. Execute o bot a partir da pasta do projeto e reinicie-o após instalar esta funcionalidade.
 
 O agendamento verifica o horário a cada 30 segundos. Se o bot estiver desligado às 06:00, ele envia as pendências do dia ao conectar depois desse horário. O progresso automático fica em `treinos-enviados.json` no diretório do banco de dados; preserve esse arquivo para evitar reenvios após reiniciar. Uma interrupção entre a confirmação do WhatsApp e a gravação local pode repetir a última enquete. Não há reposição de dias anteriores.
+
+
+### Arquivos na navega??o
+
+Ao entrar em uma pasta ou usar `/pastas`, o bot mostra subpastas e at? 20 arquivos. Use `/mais-arquivos` para continuar a lista e `/abrir Documento 1.pdf` para receber um arquivo da pasta atual como documento, preservando o nome e o conte?do original. Use o nome completo, incluindo a extens?o, sem aspas. `/abrir <n?mero>` continua selecionando pastas; se existir um arquivo com esse nome num?rico exato, o arquivo tem prioridade.
+
+A listagem de arquivos usa um iterador e guarda somente uma p?gina na mem?ria. A ordem ? a fornecida pelo sistema de arquivos; altera??es na pasta durante a pagina??o podem mudar a sequ?ncia. Use `/pastas` para atualizar. Links simb?licos n?o s?o listados, e o caminho ? validado novamente antes do envio. O envio depende dos limites do WhatsApp e da conex?o.
+
+Envie `enviar todos arquivos` (ou `/enviar todos arquivos`) para receber todos os arquivos da pasta atual como documentos. Subpastas e links n?o s?o inclu?dos. O envio ? sequencial, sem carregar a lista completa na mem?ria; falhas individuais n?o interrompem os demais arquivos. Ao terminar, o bot informa os totais enviados e as falhas. Um novo pedido durante o envio n?o inicia outra c?pia do lote.

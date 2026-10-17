@@ -3,12 +3,45 @@ import path from 'node:path';
 import { photoExtension } from '../indexing/formats.ts';
 import { authorizeDirectory, rejectUnsafeName } from '../security/authorized-paths.ts';
 import type { UserSession } from '../sessions/user-sessions.ts';
+import { authorizePhotoFile } from '../security/allowed-paths.ts';
 
 export interface FolderListing { title: string; folders: string[]; photos: number }
 
 export class NavigationService {
   private directoryCache: Promise<string[]> | undefined;
   constructor(private readonly roots: readonly string[]) {}
+
+  async *files(directory: string): AsyncGenerator<string> {
+    const safe = await authorizeDirectory(directory, this.roots);
+    for await (const entry of await opendir(safe)) {
+      if (entry.isFile() && !entry.isSymbolicLink()) yield path.join(safe, entry.name);
+    }
+  }
+
+  async filesPage(directory: string, offset = 0): Promise<{ names: string[]; more: boolean }> {
+    const safe = await authorizeDirectory(directory, this.roots);
+    const names: string[] = [];
+    let skipped = 0;
+    for await (const entry of await opendir(safe)) {
+      if (!entry.isFile() || entry.isSymbolicLink()) continue;
+      if (skipped++ < offset) continue;
+      if (names.length === 20) return { names, more: true };
+      names.push(entry.name);
+    }
+    return { names, more: false };
+  }
+
+  async file(directory: string, name: string): Promise<string> {
+    rejectUnsafeName(name);
+    if (/[\\/:]/.test(name)) throw new Error('UNSAFE_PATH');
+    const safe = await authorizeDirectory(directory, this.roots);
+    for await (const entry of await opendir(safe)) {
+      if (entry.isFile() && !entry.isSymbolicLink() && entry.name === name) {
+        return authorizePhotoFile(path.join(safe, entry.name), this.roots);
+      }
+    }
+    throw new Error('FILE_NOT_FOUND');
+  }
 
   rootsListing(): FolderListing {
     return { title: 'Pastas disponíveis', folders: [...this.roots], photos: 0 };

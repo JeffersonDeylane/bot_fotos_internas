@@ -18,6 +18,12 @@ test('navega, volta, aceita espaços/número e mantém sessões independentes', 
   await navigation.open(a, '1');
   assert.match(navigation.display(a.directory!), /Fotos de Julho/);
   assert.equal((await navigation.photos(a.directory!)).length, 1);
+  await writeFile(path.join(a.directory!, 'documento.txt'), 'conteudo');
+  await writeFile(path.join(a.directory!, 'Praia', 'privado.txt'), 'subpasta');
+  const files: string[] = [];
+  for await (const file of navigation.files(a.directory!)) files.push(path.basename(file));
+  assert.deepEqual(files.sort(), ['documento.txt', 'foto.jpg']);
+  await assert.rejects(async () => { for await (const file of navigation.files(os.tmpdir())) void file; }, /UNAUTHORIZED_DIRECTORY/);
   await navigation.back(a);
   assert.equal(a.directory, root);
   assert.equal(b.directory, undefined);

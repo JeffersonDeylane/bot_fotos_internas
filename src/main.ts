@@ -3,7 +3,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSettings } from './config/settings.ts';
 import { AppError } from './core/errors.ts';
-import { Application } from './core/application.ts';
 import { Lifecycle } from './core/lifecycle.ts';
 import { startIndexing } from './indexing/service.ts';
 import { Logger, parseLogLevel } from './logging/logger.ts';
@@ -93,6 +92,7 @@ try {
       await indexing;
       await stop('index.completed');
     } else {
+      const { Application } = await import('./core/application.ts');
       const app = new Application(settings, logger);
       lifecycle.register(() => app.stop());
       // Mantém o esqueleto ativo até SIGINT/SIGTERM, sem varreduras ou polling de fotos.
